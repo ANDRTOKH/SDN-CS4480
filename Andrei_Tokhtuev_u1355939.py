@@ -82,6 +82,9 @@ def launch (foo, bar = False):
   # 3. True if this is the last instance, False otherwise
   # The last is just a comparison between #1 and #2, but is convenient.
 
+  # Example print statement
+  print(f"Running custom POS application")
+
   log.warn("Foo: %s (%s)", foo, type(foo))
   log.warn("Bar: %s (%s)", bar, type(bar))
 
