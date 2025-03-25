@@ -122,8 +122,12 @@ def install_flow_rule(event, client_IP, real_server_ip):
     msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
     msg.match.in_port = client_in_port  # Client port 
     msg.match.nw_dst = SERVER_VIRTUAL_IP
-    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(real_server_ip)))  # Redirect to real server
-    msg.actions.append(of.ofp_action_output(port=server_in_port))  # Forward to server port 
+    # Modify the destination IP field to the real server IP
+    msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip))  # Set destination IP
+    # Forward to the real server's port
+    msg.actions.append(of.ofp_action_output(port=server_in_port))  # Send to server
+    # msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(real_server_ip)))  # Redirect to real server
+    # msg.actions.append(of.ofp_action_output(port=server_in_port))  # Forward to server port 
     event.connection.send(msg)
     log.info(f"Installed flow rule for client -> server: {client_IP} -> {real_server_ip}")
 
@@ -133,8 +137,12 @@ def install_flow_rule(event, client_IP, real_server_ip):
     msg.match.in_port = server_in_port  # Server port 
     msg.match.nw_dst = client_IP  # h1's IP
     msg.match.nw_src = real_server_ip
-    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_src(SERVER_VIRTUAL_IP)))  # Rewrite src IP to virtual IP
-    msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to client 
+     # Modify the source IP field to the virtual IP
+    msg.actions.append(of.ofp_action_nw_addr.set_src(SERVER_VIRTUAL_IP))  # Set source IP to virtual IP
+    # Forward the packet back to the client
+    msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to the client
+    # msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_src(SERVER_VIRTUAL_IP)))  # Rewrite src IP to virtual IP
+    # msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to client 
     event.connection.send(msg)
     log.info(f"Installed flow rule for server -> client: {real_server_ip} -> {client_IP}")
 
