@@ -42,71 +42,145 @@ import pox.lib.recoco as recoco               # Multitasking library
 # Create a logger for this component
 log = core.getLogger()
 
+# Mapping between virtual IP and real IP
+SERVER_VIRTUAL_IP = IPAddr("10.0.0.10")
+REAL_SERVER_IPS = [IPAddr("10.0.0.5"), IPAddr("10.0.0.6")]  # List of real server IPs
+REAL_SERVER_MACS = [EthAddr("00:00:00:00:00:05"), EthAddr("00:00:00:00:00:06")]  # Corresponding MACs
+SERVER_MAC = EthAddr("00:00:00:00:00:05")
 
-def _go_up (event):
-  # Event handler called when POX goes into up state
-  # (we actually listen to the event in launch() below)
-  log.info("Skeleton application ready (to do nothing).")
-
+# Round-robin state (a simple counter to alternate between servers)
+round_robin_index = 0
 
 @poxutil.eval_args
-def launch (foo, bar = False):
-  """
-  The default launcher just logs its arguments
-  """
+
+def launch():
+    """
+    Launch the POX component, listen to switches, and handle ARP requests and ICMP traffic.
+    """
+    core.openflow.addListenerByName("ConnectionUp", _handle_ConnectionUp)
+    core.openflow.addListenerByName("PacketIn", _handle_PacketIn)
+    log.info("POX controller running with ARP interception and virtual IP mapping.")
   # When your component is specified on the commandline, POX automatically
   # calls this function.
 
-  # Add whatever parameters you want to this.  They will become
-  # commandline arguments.  You can specify default values or not.
-  # In this example, foo is required and bar is not.  You may also
-  # specify a keyword arguments catch-all (e.g., **kwargs).
-
-  # For example, you can execute this component as:
-  # ./pox.py skeleton --foo=3 --bar=4
-
-  # Note that arguments passed from the commandline are ordinarily
-  # always strings, and it's up to you to validate and convert them.
-  # The one exception is if a user specifies the parameter name but no
-  # value (e.g., just "--foo").  In this case, it receives the actual
-  # Python value True.
-  # The @pox.util.eval_args decorator interprets them as if they are
-  # Python literals.  Even things like --foo=[1,2,3] behave as expected.
-  # Things that don't appear to be Python literals are left as strings.
-
-  # If you want to be able to invoke the component multiple times, add
-  # __INSTANCE__=None as the last parameter.  When multiply-invoked, it
-  # will be passed a tuple with the following:
-  # 1. The number of this instance (0...n-1)
-  # 2. The total number of instances for this module
-  # 3. True if this is the last instance, False otherwise
-  # The last is just a comparison between #1 and #2, but is convenient.
-
-  # Example print statement
-  print(f"Running custom POS application")
-
-  log.warn("Foo: %s (%s)", foo, type(foo))
-  log.warn("Bar: %s (%s)", bar, type(bar))
-
-  core.addListenerByName("UpEvent", _go_up)
+  # Event handler for when a switch connects
+def _handle_ConnectionUp(event):
+    log.info(f"Switch {event.dpid} has connected")
 
 
-def breakfast ():
-  """
-  Serves a Pythonic breakfast
-  """
-  # You can invoke other functions from the commandline too.  We call
-  # these multiple or alternative launch functions.  To execute this
-  # one, you'd do:
-  # ./pox.py skeleton:breakfast
+def _handle_PacketIn(event):
+    packet = event.parsed
 
-  import random
-  items = "egg,bacon,sausage,baked beans,tomato".split(',')
-  random.shuffle(items)
-  breakfast = items[:random.randint(0,len(items))]
-  breakfast += ['spam'] * random.randint(0,len(breakfast)+1)
-  random.shuffle(breakfast)
-  if len(breakfast) == 0: breakfast = ["lobster thermidor aux crevettes"]
+    if packet.type == pkt.ARP_REQUEST:
+        arp = packet.payload
+        if arp.opcode == pkt.ARP_REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
+            log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}.")
 
-  log.warn("Breakfast is served:")
-  log.warn("%s and spam", ", ".join(breakfast))
+            # Pick the next server for the client using round-robin
+            client_IP = arp.protosrc
+            real_server_ip, server_mac = get_next_server_ip_and_mac()
+
+            # Send an ARP reply for the virtual IP (10.0.0.10)
+            arp_reply = pkt.ARP()
+            arp_reply.opcode = pkt.ARP_REPLY
+            arp_reply.hwsrc = server_mac  # Virtual MAC
+            arp_reply.hwdst = arp.hwsrc   # Client's MAC
+            arp_reply.protosrc = SERVER_VIRTUAL_IP # Virtual IP
+            arp_reply.protodst = arp.protosrc      # Client's IP
+
+            # Install the flow rule for the client -> server mapping
+            install_flow_rule(event, client_IP, real_server_ip)
+
+            # Construct the Ethernet frame
+            ether = pkt.ethernet()
+            ether.type = pkt.ethernet.ARP_TYPE
+            ether.dst = packet.src
+            ether.src = server_mac
+            ether.payload = arp_reply
+
+            # Send ARP reply
+            event.connection.send(ether.pack()) #??? 
+            log.info(f"Sent ARP reply for {SERVER_VIRTUAL_IP}.")
+
+
+def install_flow_rules(event):
+    """
+    Install flow rules on the switch to forward traffic between h1 and h5,
+    where virtual IP 10.0.0.10 maps to 10.0.0.5.
+    """
+
+    ## Template 
+    # msg = of.ofp_flow_mod()
+    # msg.match.in_port = # Switch port number the packet arrived on
+    # msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    # msg.match.nw_dst = # IP destination address
+    # msg.match.nw_src = # IP source address (only in the server to client message handler)
+    # msg.actions.append(of.ofp_action_nw_addr.set_dst(server_ip)) # Rule
+
+    # Flow rule for h1 to h5
+    msg = of.ofp_flow_mod()
+    msg.match.in_port = 1  # h1's port
+    msg.match.nw_dst = SERVER_VIRTUAL_IP
+    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(SERVER_REAL_IP)))
+    msg.actions.append(of.ofp_action_output(port=2))  # h5's port
+    event.connection.send(msg)
+    log.info(f"Installed flow rule for h1 -> h5: {SERVER_VIRTUAL_IP} -> {SERVER_REAL_IP}")
+
+    # Flow rule for h5 to h1
+    msg = of.ofp_flow_mod()
+    msg.match.in_port = 2  # h5's port
+    msg.match.nw_src = SERVER_REAL_IP
+    msg.match.nw_dst = IPAddr("10.0.0.1")  # h1's IP
+    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_src(SERVER_VIRTUAL_IP)))
+    msg.actions.append(of.ofp_action_output(port=1))  # h1's port
+    event.connection.send(msg)
+    log.info(f"Installed flow rule for h5 -> h1: {SERVER_REAL_IP} -> {SERVER_VIRTUAL_IP}")
+
+
+def install_flow_rule(event, client_IP, real_server_ip):
+    """
+    Install the flow rule dynamically based on the client IP, selected real server IP, and MAC address.
+    """
+
+    client_in_port = parsePortFromIP(client_IP)
+    server_in_port = parsePortFromIP(real_server_ip)
+
+    # Flow rule for client to real server
+    msg = of.ofp_flow_mod()
+    msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    msg.match.in_port = client_in_port  # Client port 
+    msg.match.nw_dst = SERVER_VIRTUAL_IP
+    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(real_server_ip)))  # Redirect to real server
+    msg.actions.append(of.ofp_action_output(port=server_in_port))  # Forward to server port 
+    event.connection.send(msg)
+    log.info(f"Installed flow rule for client -> server: {client_IP} -> {real_server_ip}")
+
+    # Flow rule for server to client (reverse direction)
+    msg = of.ofp_flow_mod()
+    msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    msg.match.in_port = server_in_port  # Server port 
+    msg.match.nw_dst = client_IP  # h1's IP
+    msg.match.nw_src = real_server_ip
+    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_src(SERVER_VIRTUAL_IP)))  # Rewrite src IP to virtual IP
+    msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to client 
+    event.connection.send(msg)
+    log.info(f"Installed flow rule for server -> client: {real_server_ip} -> {client_IP}")
+
+  # Store previous state so that round-robin works correctly
+def get_next_server_ip_and_mac():
+    global round_robin_index
+    # Get the current server IP and MAC using round-robin
+    server_ip = REAL_SERVER_IPS[round_robin_index]
+    server_mac = REAL_SERVER_MACS[round_robin_index]
+    round_robin_index = (round_robin_index + 1) % len(REAL_SERVER_IPS)  # Cycle through the servers
+    return server_ip, server_mac
+
+def parsePortFromIP(client_IP):
+    # Split the IP address by periods ('.') to get each part
+    ip_parts = client_IP.split('.')
+    
+    # Get the last part of the IP (which corresponds to the port number)
+    last_part = ip_parts[-1]
+    
+    # Return the integer value of the last part, which represents the port number
+    return int(last_part)
