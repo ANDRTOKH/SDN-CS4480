@@ -46,7 +46,6 @@ log = core.getLogger()
 SERVER_VIRTUAL_IP = IPAddr("10.0.0.10")
 REAL_SERVER_IPS = [IPAddr("10.0.0.5"), IPAddr("10.0.0.6")]  # List of real server IPs
 REAL_SERVER_MACS = [EthAddr("00:00:00:00:00:05"), EthAddr("00:00:00:00:00:06")]  # Corresponding MACs
-SERVER_MAC = EthAddr("00:00:00:00:00:05")
 
 # Round-robin state (a simple counter to alternate between servers)
 round_robin_index = 0
@@ -63,7 +62,7 @@ def launch():
   # When your component is specified on the commandline, POX automatically
   # calls this function.
 
-  # Event handler for when a switch connects
+# Event handler for when a switch connects
 def _handle_ConnectionUp(event):
     log.info(f"Switch {event.dpid} has connected")
 
@@ -71,7 +70,7 @@ def _handle_ConnectionUp(event):
 def _handle_PacketIn(event):
     packet = event.parsed
 
-    if packet.type == pkt.ARP_REQUEST:
+    if packet.type == pkt.ARP_TYPE: # pkt.ARP_REQUEST
         arp = packet.payload
         if arp.opcode == pkt.ARP_REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
             log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}.")
@@ -102,12 +101,13 @@ def _handle_PacketIn(event):
             event.connection.send(ether.pack()) #??? 
             log.info(f"Sent ARP reply for {SERVER_VIRTUAL_IP}.")
 
+def install_flow_rule(event, client_IP, real_server_ip):
+    """
+    Install the flow rule dynamically based on the client IP and selected real server IP
+    """
 
-def install_flow_rules(event):
-    """
-    Install flow rules on the switch to forward traffic between h1 and h5,
-    where virtual IP 10.0.0.10 maps to 10.0.0.5.
-    """
+    client_in_port = parsePortFromIP(client_IP)
+    server_in_port = parsePortFromIP(real_server_ip)
 
     ## Template 
     # msg = of.ofp_flow_mod()
@@ -116,34 +116,6 @@ def install_flow_rules(event):
     # msg.match.nw_dst = # IP destination address
     # msg.match.nw_src = # IP source address (only in the server to client message handler)
     # msg.actions.append(of.ofp_action_nw_addr.set_dst(server_ip)) # Rule
-
-    # Flow rule for h1 to h5
-    msg = of.ofp_flow_mod()
-    msg.match.in_port = 1  # h1's port
-    msg.match.nw_dst = SERVER_VIRTUAL_IP
-    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(SERVER_REAL_IP)))
-    msg.actions.append(of.ofp_action_output(port=2))  # h5's port
-    event.connection.send(msg)
-    log.info(f"Installed flow rule for h1 -> h5: {SERVER_VIRTUAL_IP} -> {SERVER_REAL_IP}")
-
-    # Flow rule for h5 to h1
-    msg = of.ofp_flow_mod()
-    msg.match.in_port = 2  # h5's port
-    msg.match.nw_src = SERVER_REAL_IP
-    msg.match.nw_dst = IPAddr("10.0.0.1")  # h1's IP
-    msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_src(SERVER_VIRTUAL_IP)))
-    msg.actions.append(of.ofp_action_output(port=1))  # h1's port
-    event.connection.send(msg)
-    log.info(f"Installed flow rule for h5 -> h1: {SERVER_REAL_IP} -> {SERVER_VIRTUAL_IP}")
-
-
-def install_flow_rule(event, client_IP, real_server_ip):
-    """
-    Install the flow rule dynamically based on the client IP, selected real server IP, and MAC address.
-    """
-
-    client_in_port = parsePortFromIP(client_IP)
-    server_in_port = parsePortFromIP(real_server_ip)
 
     # Flow rule for client to real server
     msg = of.ofp_flow_mod()
