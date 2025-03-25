@@ -149,7 +149,7 @@ def get_next_server_ip_and_mac():
 
 def parsePortFromIP(client_IP):
     # Split the IP address by periods ('.') to get each part
-    ip_parts = client_IP.split('.')
+    ip_parts = str(client_IP).split('.')
     
     # Get the last part of the IP (which corresponds to the port number)
     last_part = ip_parts[-1]
