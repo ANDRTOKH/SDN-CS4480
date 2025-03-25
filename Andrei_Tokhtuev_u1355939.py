@@ -80,7 +80,7 @@ def _handle_PacketIn(event):
             real_server_ip, server_mac = get_next_server_ip_and_mac()
 
             # Send an ARP reply for the virtual IP (10.0.0.10)
-            arp_reply = pkt.arp.arp()
+            arp_reply = arp()
             arp_reply.opcode = pkt.arp.REPLY
             arp_reply.hwsrc = server_mac  # Virtual MAC
             arp_reply.hwdst = arp.hwsrc   # Client's MAC
