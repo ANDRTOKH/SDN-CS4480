@@ -70,7 +70,7 @@ def _handle_ConnectionUp(event):
 def _handle_PacketIn(event):
     packet = event.parsed
 
-    if packet.type == pkt.ARP_TYPE: # pkt.ARP_REQUEST
+    if packet.type == pkt.ethernet.ARP_TYPE:
         arp = packet.payload
         if arp.opcode == pkt.ARP_REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
             log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}.")
