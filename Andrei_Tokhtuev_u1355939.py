@@ -72,7 +72,7 @@ def _handle_PacketIn(event):
 
     if packet.type == pkt.ethernet.ARP_TYPE:
         arp = packet.payload
-        if arp.opcode == pkt.ethernet.ARP_REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
+        if arp.opcode == pkt.arp.REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
             log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}.")
 
             # Pick the next server for the client using round-robin
@@ -81,7 +81,7 @@ def _handle_PacketIn(event):
 
             # Send an ARP reply for the virtual IP (10.0.0.10)
             arp_reply = pkt.ARP()
-            arp_reply.opcode = pkt.ARP_REPLY
+            arp_reply.opcode = pkt.arp.REPLY
             arp_reply.hwsrc = server_mac  # Virtual MAC
             arp_reply.hwdst = arp.hwsrc   # Client's MAC
             arp_reply.protosrc = SERVER_VIRTUAL_IP # Virtual IP
