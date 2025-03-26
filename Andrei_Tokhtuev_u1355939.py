@@ -93,13 +93,13 @@ def _handle_PacketIn(event):
             # Construct the Ethernet frame
             ether = pkt.ethernet()
             ether.type = pkt.ethernet.ARP_TYPE
-            ether.dst = packet.src
-            ether.src = server_mac
+            ether.dst = packet.src # Client's MAC
+            ether.src = server_mac # Server's MAC
             ether.payload = arp_reply
 
             # Send ARP reply
-            event.connection.send(ether.pack()) #??? 
-            log.info(f"Sent ARP reply for {SERVER_VIRTUAL_IP}.")
+            event.connection.send(ether.pack()) 
+            log.info(f"Sent ARP reply to {arp.protosrc} for {SERVER_VIRTUAL_IP}.")
 
 def install_flow_rule(event, client_IP, real_server_ip):
     """
@@ -108,6 +108,7 @@ def install_flow_rule(event, client_IP, real_server_ip):
 
     client_in_port = parsePortFromIP(client_IP)
     server_in_port = parsePortFromIP(real_server_ip)
+
 
     ## Template 
     # msg = of.ofp_flow_mod()
@@ -129,7 +130,7 @@ def install_flow_rule(event, client_IP, real_server_ip):
     # msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(real_server_ip)))  # Redirect to real server
     # msg.actions.append(of.ofp_action_output(port=server_in_port))  # Forward to server port 
     event.connection.send(msg)
-    log.info(f"Installed flow rule for client -> server: {client_IP} -> {real_server_ip}")
+    log.info(f"Installed flow rule for client -> server: {client_IP}(port: {client_in_port}) -> {real_server_ip}port: {server_in_port})")
 
     # Flow rule for server to client (reverse direction)
     msg = of.ofp_flow_mod()
