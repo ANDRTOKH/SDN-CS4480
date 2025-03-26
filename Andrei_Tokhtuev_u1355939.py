@@ -153,7 +153,7 @@ def get_next_server_ip_and_mac():
     # Get the current server IP and MAC using round-robin
     server_ip = REAL_SERVER_IPS[round_robin_index]
     server_mac = REAL_SERVER_MACS[round_robin_index]
-    round_robin_index = (round_robin_index + 1) % len(REAL_SERVER_IPS)  # Cycle through the servers
+    # round_robin_index = (round_robin_index + 1) % len(REAL_SERVER_IPS)  # Cycle through the servers
     return server_ip, server_mac
 
 def parsePortFromIP(client_IP):
