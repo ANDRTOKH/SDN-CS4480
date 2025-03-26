@@ -73,11 +73,14 @@ def _handle_PacketIn(event):
     if packet.type == pkt.ethernet.ARP_TYPE:
         arp = packet.payload
         if arp.opcode == pkt.arp.REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
-            log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}.")
+            log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}. Client IP: {arp.protosrc}, Client MAC: {arp.hwsrc}")
 
             # Pick the next server for the client using round-robin
             client_IP = arp.protosrc
             real_server_ip, server_mac = get_next_server_ip_and_mac()
+
+            # Log selected real server IP and MAC
+            log.info(f"Selected real server: {real_server_ip} with MAC {server_mac}")
 
             # Send an ARP reply for the virtual IP (10.0.0.10)
             arp_reply = pkt.arp()
@@ -86,6 +89,9 @@ def _handle_PacketIn(event):
             arp_reply.hwdst = arp.hwsrc   # Client's MAC
             arp_reply.protosrc = SERVER_VIRTUAL_IP # Virtual IP
             arp_reply.protodst = arp.protosrc      # Client's IP
+
+             # Log the ARP reply details
+            log.info(f"Creating ARP reply: Source IP: {arp_reply.protosrc}, Dest IP: {arp_reply.protodst}, Source MAC: {arp_reply.hwsrc}, Dest MAC: {arp_reply.hwdst}")
 
             # Install the flow rule for the client -> server mapping
             install_flow_rule(event, client_IP, real_server_ip)
@@ -109,6 +115,8 @@ def install_flow_rule(event, client_IP, real_server_ip):
     client_in_port = parsePortFromIP(client_IP)
     server_in_port = parsePortFromIP(real_server_ip)
 
+    # Log the flow rule installation details
+    log.info(f"Installing flow rules: Client IP: {client_IP}, Real Server IP: {real_server_ip}, Client Port: {client_in_port}, Server Port: {server_in_port}")
 
     ## Template 
     # msg = of.ofp_flow_mod()
@@ -127,8 +135,6 @@ def install_flow_rule(event, client_IP, real_server_ip):
     msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip))  # Set destination IP
     # Forward to the real server's port
     msg.actions.append(of.ofp_action_output(port=server_in_port))  # Send to server
-    # msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_dst(real_server_ip)))  # Redirect to real server
-    # msg.actions.append(of.ofp_action_output(port=server_in_port))  # Forward to server port 
     event.connection.send(msg)
     log.info(f"Installed flow rule for client -> server: {client_IP}(port: {client_in_port}) -> {real_server_ip}port: {server_in_port})")
 
@@ -142,10 +148,8 @@ def install_flow_rule(event, client_IP, real_server_ip):
     msg.actions.append(of.ofp_action_nw_addr.set_src(SERVER_VIRTUAL_IP))  # Set source IP to virtual IP
     # Forward the packet back to the client
     msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to the client
-    # msg.actions.append(of.ofp_action_set_field(field=of.ofp_match.nw_src(SERVER_VIRTUAL_IP)))  # Rewrite src IP to virtual IP
-    # msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to client 
     event.connection.send(msg)
-    log.info(f"Installed flow rule for server -> client: {real_server_ip} -> {client_IP}")
+    log.info(f"Installed flow rule for server -> client: {real_server_ip}(port: {server_in_port}) -> {client_IP}(port: {client_in_port})")
 
   # Store previous state so that round-robin works correctly
 def get_next_server_ip_and_mac():
@@ -153,7 +157,7 @@ def get_next_server_ip_and_mac():
     # Get the current server IP and MAC using round-robin
     server_ip = REAL_SERVER_IPS[round_robin_index]
     server_mac = REAL_SERVER_MACS[round_robin_index]
-    # round_robin_index = (round_robin_index + 1) % len(REAL_SERVER_IPS)  # Cycle through the servers
+    round_robin_index = (round_robin_index + 1) % len(REAL_SERVER_IPS)  # Cycle through the servers
     return server_ip, server_mac
 
 def parsePortFromIP(client_IP):
