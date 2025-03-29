@@ -92,7 +92,7 @@ def _handle_PacketIn(event):
             
             # arp_responder code
             a = packet.find('arp')
-            r = arp()
+            r = pkt.arp()
             r.hwtype = a.hwtype
             r.prototype = a.prototype
             r.hwlen = a.hwlen
