@@ -83,29 +83,61 @@ def _handle_PacketIn(event):
             log.info(f"Selected real server: {real_server_ip} with MAC {server_mac}")
 
             # Send an ARP reply for the virtual IP (10.0.0.10)
-            arp_reply = pkt.arp()
-            arp_reply.opcode = pkt.arp.REPLY
-            arp_reply.hwsrc = server_mac  # Virtual MAC
-            arp_reply.hwdst = arp.hwsrc   # Client's MAC
-            arp_reply.protosrc = SERVER_VIRTUAL_IP # Virtual IP
-            arp_reply.protodst = arp.protosrc      # Client's IP
+            # arp_reply = pkt.arp()
+            # arp_reply.opcode = pkt.arp.REPLY
+            # arp_reply.hwsrc = server_mac  # Virtual MAC
+            # arp_reply.hwdst = arp.hwsrc   # Client's MAC
+            # arp_reply.protosrc = SERVER_VIRTUAL_IP # Virtual IP
+            # arp_reply.protodst = arp.protosrc      # Client's IP
+            
+            # arp_responder code
+            a = packet.find('arp')
+            r = arp()
+            r.hwtype = a.hwtype
+            r.prototype = a.prototype
+            r.hwlen = a.hwlen
+            r.protolen = a.protolen
+            r.opcode = arp.REPLY
+            r.hwdst = a.hwsrc
+            r.protodst = a.protosrc
+            r.protosrc = a.protodst
+            mac = a.hwsrc
+            r.hwsrc = mac
+            # mac = event.connection.eth_addr # Maybe this instead? 
+            e = pkt.ethernet(type=packet.type, src=event.connection.eth_addr,
+                        dst=a.hwsrc)
+            e.payload = r
+            if packet.type == pkt.ethernet.VLAN_TYPE:
+                v_rcv = packet.find('vlan')
+                e.payload = vlan(eth_type = e.type,
+                                payload = e.payload,
+                                id = v_rcv.id,
+                                pcp = v_rcv.pcp)
+                e.type = ethernet.VLAN_TYPE
+            log.info("%s answering ARP for %s" % (dpid_to_str(dpid), str(r.protosrc)))
+            msg = of.ofp_packet_out()
+            msg.data = e.pack()
+            msg.actions.append(of.ofp_action_output(port =
+                                                    of.OFPP_IN_PORT))
+            msg.in_port = event.port
+            event.connection.send(msg)
 
              # Log the ARP reply details
-            log.info(f"Creating ARP reply: Source IP: {arp_reply.protosrc}, Dest IP: {arp_reply.protodst}, Source MAC: {arp_reply.hwsrc}, Dest MAC: {arp_reply.hwdst}")
+            # log.info(f"Creating ARP reply: Source IP: {arp_reply.protosrc}, Dest IP: {arp_reply.protodst}, Source MAC: {arp_reply.hwsrc}, Dest MAC: {arp_reply.hwdst}")
 
             # Install the flow rule for the client -> server mapping
             install_flow_rule(event, client_IP, real_server_ip)
 
             # Construct the Ethernet frame
-            ether = pkt.ethernet()
-            ether.type = pkt.ethernet.ARP_TYPE
-            ether.dst = packet.src # Client's MAC
-            ether.src = server_mac # Server's MAC
-            ether.payload = arp_reply
+            # ether = pkt.ethernet()
+            # ether.type = pkt.ethernet.ARP_TYPE
+            # ether.dst = packet.src # Client's MAC
+            # ether.src = server_mac # Server's MAC
+            # ether.payload = arp_reply
 
-            # Send ARP reply
-            event.connection.send(ether.pack()) 
-            log.info(f"Sent ARP reply to {arp.protosrc} for {SERVER_VIRTUAL_IP}.")
+            # # Send ARP reply
+            # event.connection.send(ether.pack()) 
+            # log.info(f"Sent ARP reply to {arp.protosrc} for {SERVER_VIRTUAL_IP}.")
 
 def install_flow_rule(event, client_IP, real_server_ip):
     """
@@ -136,7 +168,7 @@ def install_flow_rule(event, client_IP, real_server_ip):
     # Forward to the real server's port
     msg.actions.append(of.ofp_action_output(port=server_in_port))  # Send to server
     event.connection.send(msg)
-    log.info(f"Installed flow rule for client -> server: {client_IP}(port: {client_in_port}) -> {real_server_ip}port: {server_in_port})")
+    log.info(f"Installed flow rule for client -> server: {client_IP}(port: {client_in_port}) -> {real_server_ip}(port: {server_in_port})")
 
     # Flow rule for server to client (reverse direction)
     msg = of.ofp_flow_mod()
