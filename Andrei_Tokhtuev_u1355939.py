@@ -72,7 +72,7 @@ def _handle_PacketIn(event):
 
     if packet.type == pkt.ethernet.ARP_TYPE:
         arp = packet.payload
-        if arp.opcode == pkt.arp.REQUEST and arp.protodst == SERVER_VIRTUAL_IP:
+        if arp.opcode == pkt.arp.REQUEST:
             log.info(f"Intercepted ARP request for {SERVER_VIRTUAL_IP}. Client IP: {arp.protosrc}, Client MAC: {arp.hwsrc}")
 
             # Pick the next server for the client using round-robin
