@@ -114,7 +114,6 @@ def _handle_PacketIn(event):
                                 id = v_rcv.id,
                                 pcp = v_rcv.pcp)
                 e.type = ethernet.VLAN_TYPE
-            log.info("%s answering ARP for %s" % (dpid_to_str(dpid), str(r.protosrc)))
             msg = of.ofp_packet_out()
             msg.data = e.pack()
             msg.actions.append(of.ofp_action_output(port =
