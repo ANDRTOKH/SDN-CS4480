@@ -109,11 +109,11 @@ def _handle_PacketIn(event):
             e.payload = r
             if packet.type == pkt.ethernet.VLAN_TYPE:
                 v_rcv = packet.find('vlan')
-                e.payload = vlan(eth_type = e.type,
+                e.payload = pkt.vlan(eth_type = e.type,
                                 payload = e.payload,
                                 id = v_rcv.id,
                                 pcp = v_rcv.pcp)
-                e.type = ethernet.VLAN_TYPE
+                e.type = pkt.ethernet.VLAN_TYPE
             msg = of.ofp_packet_out()
             msg.data = e.pack()
             msg.actions.append(of.ofp_action_output(port =
