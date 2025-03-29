@@ -100,9 +100,9 @@ def _handle_PacketIn(event):
             r.opcode = arp.REPLY
             r.hwdst = a.hwsrc
             r.protodst = a.protosrc
-            r.protosrc = a.protodst
+            r.protosrc = SERVER_VIRTUAL_IP
             mac = a.hwsrc
-            r.hwsrc = mac
+            r.hwsrc = server_mac
             # mac = event.connection.eth_addr # Maybe this instead? 
             e = pkt.ethernet(type=packet.type, src=event.connection.eth_addr,
                         dst=a.hwsrc)
