@@ -261,7 +261,7 @@ def handle_arp_request(event):
                 event.connection.send(packet_out)
 
                 # Set flow rules for future traffic
-                add_flow(event.connection, arp_packet.src_ip, selected_server_ip)
+                add_flow(event.connection, arp_packet.protosrc, selected_server_ip)
 
 def add_flow(connection, src_ip, dst_ip):
     # Add flows to the switch for both directions: client to server and server to client
