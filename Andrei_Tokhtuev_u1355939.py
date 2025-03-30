@@ -266,6 +266,7 @@ def handle_arp_request(event):
 def add_flow(connection, src_ip, dst_ip, in_port):
     # Add flows to the switch for both directions: client to server and server to client
     match_client_to_server = of.ofp_match()
+    match_client_to_server.dl_type = 0x0800  # Match IP packets (EtherType for IPv4 is 0x0800)
     match_client_to_server.nw_src = src_ip
     match_client_to_server.nw_dst = VIRTUAL_IP
     actions = [of.ofp_action_nw_addr.set_dst(dst_ip), of.ofp_action_output(port=in_port)]
@@ -278,6 +279,7 @@ def add_flow(connection, src_ip, dst_ip, in_port):
     connection.send(flow_mod_client_to_server)
 
     match_server_to_client = of.ofp_match()
+    match_server_to_client.dl_type = 0x0800  # Match IP packets (EtherType for IPv4 is 0x0800)
     match_server_to_client.nw_src = dst_ip
     match_server_to_client.nw_dst = src_ip
     actions = [of.ofp_action_nw_addr.set_dst(VIRTUAL_IP), of.ofp_action_output(port=in_port)]
