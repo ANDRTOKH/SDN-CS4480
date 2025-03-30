@@ -237,6 +237,9 @@ def handle_arp_request(event):
                 selected_server_ip = SERVER_IPS[server_index]
                 server_index = (server_index + 1) % len(SERVER_IPS)
 
+                log.debug(f"Received ARP request for IP {arp_packet.protodst}, replying with MAC {MAC_ADDRESSES[str(selected_server_ip)]}")
+
+
                 # Create ARP reply
                 arp_reply = arp()
                 arp_reply.hwsrc = MAC_ADDRESSES[str(selected_server_ip)]
@@ -261,7 +264,8 @@ def handle_arp_request(event):
                 event.connection.send(packet_out)
 
                 # Set flow rules for future traffic
-                add_flow(event.connection, arp_packet.protosrc, selected_server_ip, event.port)
+                # add_flow(event.connection, arp_packet.protosrc, selected_server_ip, event.port)
+                install_flow_rule(event, arp_packet.protosrc, selected_server_ip)
 
 def add_flow(connection, src_ip, dst_ip, in_port):
     # Add flows to the switch for both directions: client to server and server to client
@@ -302,3 +306,62 @@ def _handle_packet_in(event):
 def launch():
     core.openflow.addListenerByName("PacketIn", _handle_packet_in)
     log.info("Virtual IP Load Balancing switch running...")
+
+
+
+
+
+
+def parsePortFromIP(client_IP):
+    # Split the IP address by periods ('.') to get each part
+    ip_parts = str(client_IP).split('.')
+    
+    # Get the last part of the IP (which corresponds to the port number)
+    last_part = ip_parts[-1]
+    
+    # Return the integer value of the last part, which represents the port number
+    return int(last_part)
+
+def install_flow_rule(event, client_IP, real_server_ip):
+    """
+    Install the flow rule dynamically based on the client IP and selected real server IP
+    """
+
+    client_in_port = parsePortFromIP(client_IP)
+    server_in_port = parsePortFromIP(real_server_ip)
+
+    # Log the flow rule installation details
+    log.info(f"Installing flow rules: Client IP: {client_IP}, Real Server IP: {real_server_ip}, Client Port: {client_in_port}, Server Port: {server_in_port}")
+
+    ## Template 
+    # msg = of.ofp_flow_mod()
+    # msg.match.in_port = # Switch port number the packet arrived on
+    # msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    # msg.match.nw_dst = # IP destination address
+    # msg.match.nw_src = # IP source address (only in the server to client message handler)
+    # msg.actions.append(of.ofp_action_nw_addr.set_dst(server_ip)) # Rule
+
+    # Flow rule for client to real server
+    msg = of.ofp_flow_mod()
+    msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    msg.match.in_port = client_in_port  # Client port 
+    msg.match.nw_dst = VIRTUAL_IP
+    # Modify the destination IP field to the real server IP
+    msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip))  # Set destination IP
+    # Forward to the real server's port
+    msg.actions.append(of.ofp_action_output(port=server_in_port))  # Send to server
+    event.connection.send(msg)
+    log.info(f"Installed flow rule for client -> server: {client_IP}(port: {client_in_port}) -> {real_server_ip}(port: {server_in_port})")
+
+    # Flow rule for server to client (reverse direction)
+    msg = of.ofp_flow_mod()
+    msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    msg.match.in_port = server_in_port  # Server port 
+    msg.match.nw_dst = client_IP  # h1's IP
+    msg.match.nw_src = real_server_ip
+     # Modify the source IP field to the virtual IP
+    msg.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))  # Set source IP to virtual IP
+    # Forward the packet back to the client
+    msg.actions.append(of.ofp_action_output(port=client_in_port))  # Send back to the client
+    event.connection.send(msg)
+    log.info(f"Installed flow rule for server -> client: {real_server_ip}(port: {server_in_port}) -> {client_IP}(port: {client_in_port})")
