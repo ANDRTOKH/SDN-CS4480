@@ -357,7 +357,7 @@ def install_flow_rule(event, client_IP, real_server_ip):
     msg = of.ofp_flow_mod()
     msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
     msg.match.in_port = server_in_port  # Server port 
-    msg.match.nw_dst = client_IP  # h1's IP
+    msg.match.nw_dst = client_IP  
     msg.match.nw_src = real_server_ip
      # Modify the source IP field to the virtual IP
     msg.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))  # Set source IP to virtual IP
