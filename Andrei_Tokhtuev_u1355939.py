@@ -211,7 +211,6 @@ def install_flows(con, client_ip, server_ip):
     fm_rev.actions.append(of.ofp_action_output(port=client_port))
     con.send(fm_rev)
 
-    log.info(f"Installed flows: {client_ip} <-> {server_ip}")
 
 def handle_arp(event, arp_pkt):
     global server_index
@@ -245,8 +244,8 @@ def handle_arp(event, arp_pkt):
             type=ethernet.ARP_TYPE
         )
         eth.payload = arp_reply
-        send_packet(event, eth)
         install_flows(event.connection, client_ip, server_ip)
+        send_packet(event, eth)
 
     elif str(arp_pkt.protosrc) in [str(ip) for ip in SERVER_IPS]:
         # Server ARP for client
