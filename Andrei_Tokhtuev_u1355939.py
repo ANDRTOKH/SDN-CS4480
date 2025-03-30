@@ -261,14 +261,14 @@ def handle_arp_request(event):
                 event.connection.send(packet_out)
 
                 # Set flow rules for future traffic
-                add_flow(event.connection, arp_packet.protosrc, selected_server_ip)
+                add_flow(event.connection, arp_packet.protosrc, selected_server_ip, event.port)
 
-def add_flow(connection, src_ip, dst_ip):
+def add_flow(connection, src_ip, dst_ip, in_port):
     # Add flows to the switch for both directions: client to server and server to client
     match_client_to_server = of.ofp_match()
     match_client_to_server.nw_src = src_ip
     match_client_to_server.nw_dst = VIRTUAL_IP
-    actions = [of.ofp_action_nw_addr.set_dst(dst_ip), of.ofp_action_output(port=event.port)]
+    actions = [of.ofp_action_nw_addr.set_dst(dst_ip), of.ofp_action_output(port=in_port)]
     
     flow_mod_client_to_server = of.ofp_flow_mod()
     flow_mod_client_to_server.match = match_client_to_server
@@ -280,7 +280,7 @@ def add_flow(connection, src_ip, dst_ip):
     match_server_to_client = of.ofp_match()
     match_server_to_client.nw_src = dst_ip
     match_server_to_client.nw_dst = src_ip
-    actions = [of.ofp_action_nw_addr.set_dst(VIRTUAL_IP), of.ofp_action_output(port=event.port)]
+    actions = [of.ofp_action_nw_addr.set_dst(VIRTUAL_IP), of.ofp_action_output(port=in_port)]
     
     flow_mod_server_to_client = of.ofp_flow_mod()
     flow_mod_server_to_client.match = match_server_to_client
