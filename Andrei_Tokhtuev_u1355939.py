@@ -242,8 +242,8 @@ def handle_arp_request(event):
                 arp_reply.hwsrc = MAC_ADDRESSES[str(selected_server_ip)]
                 arp_reply.hwdst = arp_packet.hwsrc
                 arp_reply.opcode = arp.REPLY
-                arp_reply.src_ip = selected_server_ip
-                arp_reply.dst_ip = arp_packet.src_ip
+                arp_reply.protosrc = selected_server_ip
+                arp_reply.protodst = arp_packet.protosrc
 
                 # Create Ethernet frame
                 ethernet_reply = ethernet()
