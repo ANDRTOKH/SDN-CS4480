@@ -160,21 +160,18 @@
 
 
 
-
 from pox.core import core
-from pox.lib.packet import arp, ethernet
+from pox.lib.packet import arp, ethernet, ipv4, icmp
 from pox.lib.addresses import IPAddr, EthAddr
 from pox.openflow import libopenflow_01 as of
 
 log = core.getLogger()
 
-# Virtual IP and Real IP addresses of servers
 VIRTUAL_IP = IPAddr("10.0.0.10")
-SERVER_IPS = [IPAddr("10.0.0.5"), IPAddr("10.0.0.6")]  # Real IPs of servers
+SERVER_IPS = [IPAddr("10.0.0.5"), IPAddr("10.0.0.6")]
 CLIENT_IPS = [IPAddr("10.0.0.1"), IPAddr("10.0.0.2"), IPAddr("10.0.0.3"), IPAddr("10.0.0.4")]
 
-# Predefined MAC addresses for all hosts
-MAC_ADDRESSES = {
+MAC_DB = {
     "10.0.0.1": EthAddr("00:00:00:00:00:01"),
     "10.0.0.2": EthAddr("00:00:00:00:00:02"),
     "10.0.0.3": EthAddr("00:00:00:00:00:03"),
@@ -183,93 +180,109 @@ MAC_ADDRESSES = {
     "10.0.0.6": EthAddr("00:00:00:00:00:06"),
 }
 
-server_index = 0  # Round-robin index
+server_index = 0
+client_server_map = {}  # Maps client IP to server IP
 
-def parsePortFromIP(ip):
+def parse_port(ip):
     return int(str(ip).split('.')[-1])
 
-def install_flow_rule(event, client_IP, real_server_ip):
-    client_in_port = parsePortFromIP(client_IP)
-    server_in_port = parsePortFromIP(real_server_ip)
+def install_flows(con, client_ip, server_ip):
+    client_port = parse_port(client_ip)
+    server_port = parse_port(server_ip)
 
-    # Client -> Server rule
-    msg = of.ofp_flow_mod()
-    msg.match.dl_type = 0x800  # IPv4
-    msg.match.in_port = client_in_port
-    msg.match.nw_dst = VIRTUAL_IP
-    msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip))
-    msg.actions.append(of.ofp_action_output(port=server_in_port))
-    event.connection.send(msg)
+    # Client -> Server flow
+    fm = of.ofp_flow_mod()
+    fm.priority = 65535
+    fm.match.in_port = client_port
+    fm.match.dl_type = 0x800  # IPv4
+    fm.match.nw_dst = VIRTUAL_IP
+    fm.actions.append(of.ofp_action_nw_addr.set_dst(server_ip))
+    fm.actions.append(of.ofp_action_output(port=server_port))
+    con.send(fm)
 
-    # Server -> Client rule
-    msg = of.ofp_flow_mod()
-    msg.match.dl_type = 0x800
-    msg.match.in_port = server_in_port
-    msg.match.nw_src = real_server_ip
-    msg.match.nw_dst = client_IP
-    msg.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))
-    msg.actions.append(of.ofp_action_output(port=client_in_port))
-    event.connection.send(msg)
+    # Server -> Client flow
+    fm_rev = of.ofp_flow_mod()
+    fm_rev.priority = 65535
+    fm_rev.match.in_port = server_port
+    fm_rev.match.dl_type = 0x800
+    fm_rev.match.nw_src = server_ip
+    fm_rev.match.nw_dst = client_ip
+    fm_rev.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))
+    fm_rev.actions.append(of.ofp_action_output(port=client_port))
+    con.send(fm_rev)
 
-    log.info(f"Installed flow rules for {client_IP} <-> {real_server_ip}")
+    log.info(f"Installed flows: {client_ip} <-> {server_ip}")
 
-def handle_arp_request(event, arp_packet):
+def handle_arp(event, arp_pkt):
     global server_index
 
-    # Handle ARP requests for virtual IP
-    if arp_packet.protodst == VIRTUAL_IP:
-        selected_server_ip = SERVER_IPS[server_index]
+    if arp_pkt.protodst == VIRTUAL_IP:
+        # Client ARP for VIP
+        client_ip = arp_pkt.protosrc
+        server_ip = SERVER_IPS[server_index]
         server_index = (server_index + 1) % len(SERVER_IPS)
-        server_mac = MAC_ADDRESSES[str(selected_server_ip)]
-        
-        # Send ARP reply with server's MAC
-        reply = arp()
-        reply.hwsrc = server_mac
-        reply.hwdst = arp_packet.hwsrc
-        reply.opcode = arp.REPLY
-        reply.protosrc = VIRTUAL_IP  # Key change: Use virtual IP as source
-        reply.protodst = arp_packet.protosrc
-        
-        eth = ethernet()
-        eth.src = server_mac
-        eth.dst = arp_packet.hwsrc
-        eth.type = ethernet.ARP_TYPE
-        eth.payload = reply
-        
-        # Send packet
-        packet_out = of.ofp_packet_out()
-        packet_out.data = eth.pack()
-        packet_out.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
-        packet_out.in_port = event.port
-        event.connection.send(packet_out)
-        
-        install_flow_rule(event, arp_packet.protosrc, selected_server_ip)
-        log.info(f"Replied to ARP for VIP with {selected_server_ip}")
+        client_server_map[client_ip] = server_ip
 
-    # Handle ARP requests from servers to clients
-    elif str(arp_packet.protosrc) in [str(ip) for ip in SERVER_IPS] and str(arp_packet.protodst) in [str(ip) for ip in CLIENT_IPS]:
-        client_mac = MAC_ADDRESSES[str(arp_packet.protodst)]
+        # Send ARP reply with server's MAC
+        arp_reply = arp(
+            opcode=arp.REPLY,
+            hwsrc=MAC_DB[str(server_ip)],
+            hwdst=arp_pkt.hwsrc,
+            protosrc=VIRTUAL_IP,
+            protodst=client_ip
+        )
+        eth = ethernet(
+            src=MAC_DB[str(server_ip)],
+            dst=arp_pkt.hwsrc,
+            type=ethernet.ARP_TYPE
+        )
+        eth.payload = arp_reply
+        send_packet(event, eth)
+        install_flows(event.connection, client_ip, server_ip)
+
+    elif str(arp_pkt.protosrc) in [str(ip) for ip in SERVER_IPS]:
+        # Server ARP for client
+        client_ip = arp_pkt.protodst
+        arp_reply = arp(
+            opcode=arp.REPLY,
+            hwsrc=MAC_DB[str(client_ip)],
+            hwdst=arp_pkt.hwsrc,
+            protosrc=client_ip,
+            protodst=arp_pkt.protosrc
+        )
+        eth = ethernet(
+            src=MAC_DB[str(client_ip)],
+            dst=arp_pkt.hwsrc,
+            type=ethernet.ARP_TYPE
+        )
+        eth.payload = arp_reply
+        send_packet(event, eth)
+
+def handle_ip(event, ip_pkt):
+    if ip_pkt.dstip == VIRTUAL_IP:
+        # Packet to VIP: Use mapped server
+        client_ip = ip_pkt.srcip
+        server_ip = client_server_map.get(client_ip)
         
-        # Send ARP reply with client's MAC
-        reply = arp()
-        reply.hwsrc = client_mac
-        reply.hwdst = arp_packet.hwsrc
-        reply.opcode = arp.REPLY
-        reply.protosrc = arp_packet.protodst
-        reply.protodst = arp_packet.protosrc
-        
-        eth = ethernet()
-        eth.src = client_mac
-        eth.dst = arp_packet.hwsrc
-        eth.type = ethernet.ARP_TYPE
-        eth.payload = reply
-        
-        packet_out = of.ofp_packet_out()
-        packet_out.data = eth.pack()
-        packet_out.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
-        packet_out.in_port = event.port
-        event.connection.send(packet_out)
-        log.info(f"Replied to server ARP for client {arp_packet.protodst}")
+        if server_ip:
+            # Modify destination IP and forward
+            ip_pkt.dstip = server_ip
+            ip_pkt.payload.checksum = None  # Force recalculation
+            server_port = parse_port(server_ip)
+            
+            # Send modified packet
+            msg = of.ofp_packet_out()
+            msg.data = event.ofp.pack()
+            msg.actions.append(of.ofp_action_nw_addr.set_dst(server_ip))
+            msg.actions.append(of.ofp_action_output(port=server_port))
+            event.connection.send(msg)
+
+def send_packet(event, packet):
+    msg = of.ofp_packet_out()
+    msg.data = packet.pack()
+    msg.actions.append(of.ofp_action_output(port=of.OFPP_IN_PORT))
+    msg.in_port = event.port
+    event.connection.send(msg)
 
 def _handle_packet_in(event):
     packet = event.parsed
@@ -277,10 +290,13 @@ def _handle_packet_in(event):
         return
 
     if packet.type == ethernet.ARP_TYPE:
-        arp_packet = packet.payload
-        if arp_packet.opcode == arp.REQUEST:
-            handle_arp_request(event, arp_packet)
+        arp_pkt = packet.payload
+        if arp_pkt.opcode == arp.REQUEST:
+            handle_arp(event, arp_pkt)
+    elif packet.type == ethernet.IP_TYPE:
+        ip_pkt = packet.payload
+        handle_ip(event, ip_pkt)
 
 def launch():
     core.openflow.addListenerByName("PacketIn", _handle_packet_in)
-    log.info("Virtual IP Load Balancer running...")
+    log.info("Load balancer running.")
