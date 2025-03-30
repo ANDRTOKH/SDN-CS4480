@@ -223,6 +223,10 @@ MAC_ADDRESSES = {  # MAC addresses corresponding to the servers
 # Round-robin index for selecting a server
 server_index = 0
 
+# Dictionary to track client IPs and their assigned server IPs
+client_server_mapping = {}
+
+
 def handle_arp_request(event):
     global server_index
 
@@ -233,13 +237,21 @@ def handle_arp_request(event):
         if arp_packet.opcode == arp.REQUEST:
             # If the request is for our virtual IP
             if arp_packet.protodst == VIRTUAL_IP:
-                # Select the next server in round-robin fashion
-                selected_server_ip = SERVER_IPS[server_index]
-                server_index = (server_index + 1) % len(SERVER_IPS)
+                client_ip = arp_packet.protosrc
 
-                log.info(f"Received ARP request for IP {arp_packet.protodst}, replying with MAC {MAC_ADDRESSES[str(selected_server_ip)]}")
+                # Check if this client already has an assigned server
+                if client_ip in client_server_mapping:
+                    selected_server_ip = client_server_mapping[client_ip]
+                    log.info(f"Client {client_ip} already assigned to server {selected_server_ip}.")
+                else:
+                    # Select the next server in round-robin fashion
+                    selected_server_ip = SERVER_IPS[server_index]
+                    server_index = (server_index + 1) % len(SERVER_IPS)
 
-
+                    # Assign the selected server to the client
+                    client_server_mapping[client_ip] = selected_server_ip
+                    log.info(f"New client {client_ip} assigned to server {selected_server_ip}.")
+                    
                 # Create ARP reply
                 arp_reply = arp()
                 arp_reply.hwsrc = MAC_ADDRESSES[str(selected_server_ip)]
