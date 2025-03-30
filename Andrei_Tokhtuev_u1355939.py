@@ -207,6 +207,7 @@ from pox.core import core
 from pox.lib.packet import arp, icmp, ethernet
 from pox.lib.addresses import IPAddr, EthAddr
 from pox.openflow import libopenflow_01 as of
+
 import random
 
 log = core.getLogger()
@@ -231,7 +232,7 @@ def handle_arp_request(event):
         arp_packet = packet.payload
         if arp_packet.opcode == arp.REQUEST:
             # If the request is for our virtual IP
-            if arp_packet.dst_ip == VIRTUAL_IP:
+            if arp_packet.protodst == VIRTUAL_IP:
                 # Select the next server in round-robin fashion
                 selected_server_ip = SERVER_IPS[server_index]
                 server_index = (server_index + 1) % len(SERVER_IPS)
@@ -282,22 +283,22 @@ def add_flow(connection, src_ip, dst_ip):
     flow_mod_server_to_client.hard_timeout = 30
     connection.send(flow_mod_server_to_client)
 
-def handle_icmp_request(event):
-    packet = event.parsed
-    if packet.type == ethernet.IP_TYPE and packet.payload.protocol == icmp.ICMP_TYPE:
-        icmp_packet = packet.payload
-        if isinstance(icmp_packet, icmp.echo):
-            log.debug("Handling ICMP echo request from %s", packet.payload.srcip)
-            # Just forward the ICMP request to the server based on existing flow rules
-            # The reverse flow will handle the reply automatically
+# def handle_icmp_request(event):
+#     packet = event.parsed
+#     if packet.type == ethernet.IP_TYPE and packet.payload.protocol == icmp.ICMP_TYPE:
+#         icmp_packet = packet.payload
+#         if isinstance(icmp_packet, icmp.echo):
+#             log.debug("Handling ICMP echo request from %s", packet.payload.srcip)
+#             # Just forward the ICMP request to the server based on existing flow rules
+#             # The reverse flow will handle the reply automatically
 
 def _handle_packet_in(event):
     packet = event.parsed
 
     if packet.type == ethernet.ARP_TYPE:
         handle_arp_request(event)
-    elif packet.type == ethernet.IP_TYPE:
-        handle_icmp_request(event)
+    # elif packet.type == ethernet.IP_TYPE:
+    #     handle_icmp_request(event)
 
 def launch():
     core.openflow.addListenerByName("PacketIn", _handle_packet_in)
