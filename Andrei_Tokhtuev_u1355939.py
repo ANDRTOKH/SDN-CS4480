@@ -251,8 +251,14 @@ def handle_arp_request(event):
                 ethernet_reply.dst = arp_packet.hwsrc
                 ethernet_reply.payload = arp_reply
 
-                # Send the ARP reply
-                event.connection.send(ethernet_reply)
+                # Create the OpenFlow PacketOut message
+                packet_out = of.ofp_packet_out()
+                packet_out.data = ethernet_reply.pack()  # Pack the Ethernet frame into raw data
+                packet_out.in_port = event.port  # The port from which the packet came
+                packet_out.actions.append(of.ofp_action_output(port=event.port))  # Action to send it back out on the same port
+
+                # Send the OpenFlow PacketOut message
+                event.connection.send(packet_out)
 
                 # Set flow rules for future traffic
                 add_flow(event.connection, arp_packet.src_ip, selected_server_ip)
@@ -283,22 +289,13 @@ def add_flow(connection, src_ip, dst_ip):
     flow_mod_server_to_client.hard_timeout = 30
     connection.send(flow_mod_server_to_client)
 
-# def handle_icmp_request(event):
-#     packet = event.parsed
-#     if packet.type == ethernet.IP_TYPE and packet.payload.protocol == icmp.ICMP_TYPE:
-#         icmp_packet = packet.payload
-#         if isinstance(icmp_packet, icmp.echo):
-#             log.debug("Handling ICMP echo request from %s", packet.payload.srcip)
-#             # Just forward the ICMP request to the server based on existing flow rules
-#             # The reverse flow will handle the reply automatically
 
 def _handle_packet_in(event):
     packet = event.parsed
 
     if packet.type == ethernet.ARP_TYPE:
         handle_arp_request(event)
-    # elif packet.type == ethernet.IP_TYPE:
-    #     handle_icmp_request(event)
+
 
 def launch():
     core.openflow.addListenerByName("PacketIn", _handle_packet_in)
