@@ -219,9 +219,17 @@ def handle_arp(event, arp_pkt):
     if arp_pkt.protodst == VIRTUAL_IP:
         # Client ARP for VIP
         client_ip = arp_pkt.protosrc
-        server_ip = SERVER_IPS[server_index]
-        server_index = (server_index + 1) % len(SERVER_IPS)
-        client_server_map[client_ip] = server_ip
+        
+        #  Check if this client already has an assigned server
+        if client_ip in client_server_map:
+            server_ip = client_server_map[client_ip]
+        else:
+            # Select the next server in round-robin fashion
+            server_ip = SERVER_IPS[server_index]
+            server_index = (server_index + 1) % len(SERVER_IPS)
+
+            # Assign the selected server to the client
+            client_server_map[client_ip] = server_ip
 
         # Send ARP reply with server's MAC
         arp_reply = arp(
