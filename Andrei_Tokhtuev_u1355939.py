@@ -247,9 +247,9 @@ def handle_arp_request(event):
 
                 # Create Ethernet frame
                 ethernet_reply = ethernet()
-                ethernet_reply.set_src(MAC_ADDRESSES[str(selected_server_ip)])
-                ethernet_reply.set_dst(arp_packet.hwsrc)
-                ethernet_reply.set_payload(arp_reply)
+                ethernet_reply.src = MAC_ADDRESSES[str(selected_server_ip)]
+                ethernet_reply.dst = arp_packet.hwsrc
+                ethernet_reply.payload = arp_reply
 
                 # Send the ARP reply
                 event.connection.send(ethernet_reply)
