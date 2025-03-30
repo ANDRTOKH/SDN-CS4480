@@ -121,7 +121,6 @@
 #     # Return the integer value of the last part, which represents the port number
 #     return int(last_part)
 
-# # TO-DO: Rename to "add_flow"
 # def add_flow(event, client_IP, real_server_ip):
 #     """
 #     Install the flow rule dynamically based on the client IP and selected real server IP
@@ -130,24 +129,24 @@
 #     client_in_port = parsePortFromIP(client_IP)
 #     server_in_port = parsePortFromIP(real_server_ip)
 
-#     # Flow rule for client to real server
-#     msg = of.ofp_flow_mod()
-#     msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
-#     msg.match.in_port = client_in_port  
-#     msg.match.nw_dst = VIRTUAL_IP
-#     msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip)) 
-#     msg.actions.append(of.ofp_action_output(port=server_in_port))  
-#     event.connection.send(msg)
+    # # Flow rule for client to real server
+    # msg = of.ofp_flow_mod()
+    # msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    # msg.match.in_port = client_in_port  
+    # msg.match.nw_dst = VIRTUAL_IP
+    # msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip)) 
+    # msg.actions.append(of.ofp_action_output(port=server_in_port))  
+    # event.connection.send(msg)
 
-#     # Flow rule for server to client (reverse direction)
-#     msg = of.ofp_flow_mod()
-#     msg.match.dl_type = 0x800 
-#     msg.match.in_port = server_in_port  
-#     msg.match.nw_dst = client_IP  
-#     msg.match.nw_src = real_server_ip
-#     msg.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))  
-#     msg.actions.append(of.ofp_action_output(port=client_in_port))  
-#     event.connection.send(msg)
+    # # Flow rule for server to client (reverse direction)
+    # msg = of.ofp_flow_mod()
+    # msg.match.dl_type = 0x800 
+    # msg.match.in_port = server_in_port  
+    # msg.match.nw_dst = client_IP  
+    # msg.match.nw_src = real_server_ip
+    # msg.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))  
+    # msg.actions.append(of.ofp_action_output(port=client_in_port))  
+    # event.connection.send(msg)
     
 
 
@@ -171,7 +170,7 @@ VIRTUAL_IP = IPAddr("10.0.0.10")
 SERVER_IPS = [IPAddr("10.0.0.5"), IPAddr("10.0.0.6")]
 CLIENT_IPS = [IPAddr("10.0.0.1"), IPAddr("10.0.0.2"), IPAddr("10.0.0.3"), IPAddr("10.0.0.4")]
 
-MAC_DB = {
+MAC_ADDRESSES = {
     "10.0.0.1": EthAddr("00:00:00:00:00:01"),
     "10.0.0.2": EthAddr("00:00:00:00:00:02"),
     "10.0.0.3": EthAddr("00:00:00:00:00:03"),
@@ -183,34 +182,44 @@ MAC_DB = {
 server_index = 0
 client_server_map = {}  # Maps client IP to server IP
 
-def parse_port(ip):
-    return int(str(ip).split('.')[-1])
 
-def install_flows(con, client_ip, server_ip):
-    client_port = parse_port(client_ip)
-    server_port = parse_port(server_ip)
+def parse_port_from_ip(client_IP):
+    # Split the IP address by periods ('.') to get each part
+    ip_parts = str(client_IP).split('.')
+    
+    # Get the last part of the IP (which corresponds to the port number)
+    last_part = ip_parts[-1]
+    
+    # Return the integer value of the last part, which represents the port number
+    return int(last_part)
 
-    # Client -> Server flow
-    fm = of.ofp_flow_mod()
-    fm.priority = 65535
-    fm.match.in_port = client_port
-    fm.match.dl_type = 0x800  # IPv4
-    fm.match.nw_dst = VIRTUAL_IP
-    fm.actions.append(of.ofp_action_nw_addr.set_dst(server_ip))
-    fm.actions.append(of.ofp_action_output(port=server_port))
-    con.send(fm)
+def add_flow(connection, client_ip, real_server_ip):
+    """
+    Install the flow rule dynamically based on the client IP and selected real server IP
+    """
 
-    # Server -> Client flow
-    fm_rev = of.ofp_flow_mod()
-    fm_rev.priority = 65535
-    fm_rev.match.in_port = server_port
-    fm_rev.match.dl_type = 0x800
-    fm_rev.match.nw_src = server_ip
-    fm_rev.match.nw_dst = client_ip
-    fm_rev.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))
-    fm_rev.actions.append(of.ofp_action_output(port=client_port))
-    con.send(fm_rev)
+    client_in_port = parse_port_from_ip(client_ip)
+    server_in_port = parse_port_from_ip(real_server_ip)
 
+    # Flow rule for client to real server
+    msg = of.ofp_flow_mod()
+    msg.match.dl_type = 0x800 # Ethertype / length (e.g. 0x0800 = IPv4)
+    msg.match.in_port = client_in_port  
+    msg.match.nw_dst = VIRTUAL_IP
+    msg.actions.append(of.ofp_action_nw_addr.set_dst(real_server_ip)) 
+    msg.actions.append(of.ofp_action_output(port=server_in_port))  
+    connection.send(msg)
+
+    # Flow rule for server to client (reverse direction)
+    msg = of.ofp_flow_mod()
+    msg.match.dl_type = 0x800 
+    msg.match.in_port = server_in_port  
+    msg.match.nw_dst = client_ip  
+    msg.match.nw_src = real_server_ip
+    msg.actions.append(of.ofp_action_nw_addr.set_src(VIRTUAL_IP))  
+    msg.actions.append(of.ofp_action_output(port=client_in_port))  
+    connection.send(msg)
+    
 
 def handle_arp(event, arp_pkt):
     global server_index
@@ -233,18 +242,18 @@ def handle_arp(event, arp_pkt):
         # Send ARP reply with server's MAC
         arp_reply = arp(
             opcode=arp.REPLY,
-            hwsrc=MAC_DB[str(server_ip)],
+            hwsrc=MAC_ADDRESSES[str(server_ip)],
             hwdst=arp_pkt.hwsrc,
             protosrc=VIRTUAL_IP,
             protodst=client_ip
         )
         eth = ethernet(
-            src=MAC_DB[str(server_ip)],
+            src=MAC_ADDRESSES[str(server_ip)],
             dst=arp_pkt.hwsrc,
             type=ethernet.ARP_TYPE
         )
         eth.payload = arp_reply
-        install_flows(event.connection, client_ip, server_ip)
+        add_flow(event.connection, client_ip, server_ip)
         send_packet(event, eth)
 
     elif str(arp_pkt.protosrc) in [str(ip) for ip in SERVER_IPS]:
@@ -252,13 +261,13 @@ def handle_arp(event, arp_pkt):
         client_ip = arp_pkt.protodst
         arp_reply = arp(
             opcode=arp.REPLY,
-            hwsrc=MAC_DB[str(client_ip)],
+            hwsrc=MAC_ADDRESSES[str(client_ip)],
             hwdst=arp_pkt.hwsrc,
             protosrc=client_ip,
             protodst=arp_pkt.protosrc
         )
         eth = ethernet(
-            src=MAC_DB[str(client_ip)],
+            src=MAC_ADDRESSES[str(client_ip)],
             dst=arp_pkt.hwsrc,
             type=ethernet.ARP_TYPE
         )
@@ -275,7 +284,7 @@ def handle_ip(event, ip_pkt):
             # Modify destination IP and forward
             ip_pkt.dstip = server_ip
             ip_pkt.payload.checksum = None  # Force recalculation
-            server_port = parse_port(server_ip)
+            server_port = parse_port_from_ip(server_ip)
             
             # Send modified packet
             msg = of.ofp_packet_out()
