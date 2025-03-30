@@ -257,7 +257,7 @@ def handle_arp_request(event):
                 # Create the OpenFlow PacketOut message
                 packet_out = of.ofp_packet_out()
                 packet_out.data = ethernet_reply.pack()  # Pack the Ethernet frame into raw data
-                packet_out.in_port = event.port  # The port from which the packet came
+                # packet_out.in_port = event.port  # The port from which the packet came
                 packet_out.actions.append(of.ofp_action_output(port=event.port))  # Action to send it back out on the same port
 
                 # Send the OpenFlow PacketOut message
