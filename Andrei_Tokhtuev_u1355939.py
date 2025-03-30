@@ -251,7 +251,7 @@ def handle_arp_request(event):
                     # Assign the selected server to the client
                     client_server_mapping[client_ip] = selected_server_ip
                     log.info(f"New client {client_ip} assigned to server {selected_server_ip}.")
-                    
+
                 # Create ARP reply
                 arp_reply = arp()
                 arp_reply.hwsrc = MAC_ADDRESSES[str(selected_server_ip)]
@@ -278,6 +278,48 @@ def handle_arp_request(event):
                 # Set flow rules for future traffic
                 # add_flow(event.connection, arp_packet.protosrc, selected_server_ip, event.port)
                 install_flow_rule(event, arp_packet.protosrc, selected_server_ip)
+
+def handle_ip_packet(event):
+    packet = event.parsed
+    if packet.type == ethernet.IP_TYPE:
+        ip_packet = packet.payload
+
+        # Check if this is a packet destined to our virtual IP
+        if ip_packet.dstip == VIRTUAL_IP:
+            client_ip = ip_packet.srcip
+
+            # Check if we already have a server assigned to this client
+            if client_ip in client_server_mapping:
+                selected_server_ip = client_server_mapping[client_ip]
+                log.info(f"Client {client_ip} already assigned to server {selected_server_ip}.")
+            else:
+                # Select the next server in round-robin fashion
+                selected_server_ip = SERVER_IPS[server_index]
+                server_index = (server_index + 1) % len(SERVER_IPS)
+
+                # Assign the selected server to the client
+                client_server_mapping[client_ip] = selected_server_ip
+                log.info(f"New client {client_ip} assigned to server {selected_server_ip}.")
+
+            # Modify the destination IP to the selected server's IP
+            ip_packet.dstip = selected_server_ip
+
+            # Create a new Ethernet frame to forward the packet to the server
+            ethernet_reply = ethernet()
+            ethernet_reply.src = MAC_ADDRESSES[str(selected_server_ip)]
+            ethernet_reply.dst = packet.src
+            ethernet_reply.payload = ip_packet
+
+            # Create the OpenFlow PacketOut message
+            packet_out = of.ofp_packet_out()
+            packet_out.data = ethernet_reply.pack()  # Pack the Ethernet frame into raw data
+            packet_out.actions.append(of.ofp_action_output(port=event.port))  # Action to send it back out on the same port
+
+            # Send the OpenFlow PacketOut message
+            event.connection.send(packet_out)
+
+            # Install flow rules for future traffic
+            install_flow_rule(event, client_ip, selected_server_ip)
 
 def add_flow(connection, src_ip, dst_ip, in_port):
     # Add flows to the switch for both directions: client to server and server to client
@@ -313,6 +355,8 @@ def _handle_packet_in(event):
 
     if packet.type == ethernet.ARP_TYPE:
         handle_arp_request(event)
+    elif packet.type == ethernet.IP_TYPE:
+        handle_ip_packet(event)
 
 
 def launch():
