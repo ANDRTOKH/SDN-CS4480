@@ -237,7 +237,7 @@ def handle_arp_request(event):
                 selected_server_ip = SERVER_IPS[server_index]
                 server_index = (server_index + 1) % len(SERVER_IPS)
 
-                log.debug(f"Received ARP request for IP {arp_packet.protodst}, replying with MAC {MAC_ADDRESSES[str(selected_server_ip)]}")
+                log.info(f"Received ARP request for IP {arp_packet.protodst}, replying with MAC {MAC_ADDRESSES[str(selected_server_ip)]}")
 
 
                 # Create ARP reply
